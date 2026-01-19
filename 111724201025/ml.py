@@ -1,0 +1,363 @@
+import numpy as np
+
+class CandidateElimination:
+    """
+    Implementation of Candidate Elimination Algorithm
+    """
+    
+    def __init__(self, num_attributes):
+        """
+        Initialize the algorithm
+        
+        Args:
+            num_attributes: Number of attributes/features
+        """
+        self.num_attributes = num_attributes
+        
+        # Initialize S: most specific hypothesis (start with {∅,∅,...})
+        self.S = [['∅'] * num_attributes]
+        
+        # Initialize G: most general hypothesis (start with {?,?,...})
+        self.G = [['?'] * num_attributes]
+        
+        # Track version spaces
+        self.S_history = [self.S.copy()]
+        self.G_history = [self.G.copy()]
+        
+    def is_consistent(self, hypothesis, instance, label):
+        """
+        Check if a hypothesis is consistent with an instance
+        
+        Args:
+            hypothesis: Hypothesis to check
+            instance: Training instance
+            label: Class label (0 or 1)
+        
+        Returns:
+            Boolean indicating consistency
+        """
+        # For positive examples: hypothesis must match
+        # For negative examples: hypothesis must NOT match
+        
+        # Check if hypothesis matches the instance
+        matches = True
+        for h, i in zip(hypothesis, instance):
+            if h != '?' and h != '∅' and h != i:
+                matches = False
+                break
+        
+        if label == 1:  # Positive example
+            return matches
+        else:  # Negative example
+            return not matches
+    
+    def is_more_general(self, h1, h2):
+        """
+        Check if h1 is more general than h2
+        
+        Args:
+            h1: First hypothesis
+            h2: Second hypothesis
+        
+        Returns:
+            Boolean indicating if h1 is more general than h2
+        """
+        for a, b in zip(h1, h2):
+            if b != '∅' and (a == '∅' or (a != '?' and a != b)):
+                return False
+            if a == '?' and b != '?':
+                continue
+            if a != b:
+                return False
+        return True
+    
+    def remove_inconsistent_hypotheses(self, hypotheses, instance, label):
+        """
+        Remove hypotheses inconsistent with the training example
+        
+        Args:
+            hypotheses: List of hypotheses
+            instance: Training instance
+            label: Class label
+        
+        Returns:
+            List of consistent hypotheses
+        """
+        consistent_hypotheses = []
+        for h in hypotheses:
+            if self.is_consistent(h, instance, label):
+                consistent_hypotheses.append(h)
+        return consistent_hypotheses
+    
+    def generalize_S(self, instance):
+        """
+        Generalize S boundary to cover positive examples
+        
+        Args:
+            instance: Positive training instance
+        """
+        new_S = []
+        
+        for s in self.S:
+            if not self.is_consistent(s, instance, 1):
+                # Create generalizations
+                for i in range(self.num_attributes):
+                    if s[i] == '∅':
+                        # First time seeing attribute
+                        new_hypothesis = ['∅'] * self.num_attributes
+                        new_hypothesis[i] = instance[i]
+                        if all(new_hypothesis[j] == s[j] or s[j] == '∅' 
+                               for j in range(self.num_attributes) if j != i):
+                            new_S.append(new_hypothesis)
+                    elif s[i] != instance[i]:
+                        # Replace with '?'
+                        new_hypothesis = s.copy()
+                        new_hypothesis[i] = '?'
+                        # Check if this is more general than some G
+                        is_valid = False
+                        for g in self.G:
+                            if self.is_more_general(g, new_hypothesis):
+                                is_valid = True
+                                break
+                        if is_valid and new_hypothesis not in new_S:
+                            new_S.append(new_hypothesis)
+                    else:
+                        # Keep as is
+                        if s not in new_S:
+                            new_S.append(s)
+        
+        # Remove hypotheses that are more specific than others
+        self.S = []
+        for i in range(len(new_S)):
+            is_specific = False
+            for j in range(len(new_S)):
+                if i != j and self.is_more_general(new_S[j], new_S[i]):
+                    is_specific = True
+                    break
+            if not is_specific and new_S[i] not in self.S:
+                self.S.append(new_S[i])
+    
+    def specialize_G(self, instance):
+        """
+        Specialize G boundary to exclude negative examples
+        
+        Args:
+            instance: Negative training instance
+        """
+        new_G = []
+        
+        for g in self.G:
+            if not self.is_consistent(g, instance, 0):
+                # Create specializations
+                for i in range(self.num_attributes):
+                    if g[i] == '?':
+                        # Specialize with possible values
+                        # In practice, we would need domain knowledge of possible values
+                        # For simplicity, we'll create a specialization that doesn't match instance
+                        specialization = g.copy()
+                        specialization[i] = f'not_{instance[i]}'  # Placeholder
+                        # Check if this is more specific than some S
+                        is_valid = False
+                        for s in self.S:
+                            if self.is_more_general(specialization, s) or s == ['∅'] * self.num_attributes:
+                                is_valid = True
+                                break
+                        if is_valid and specialization not in new_G:
+                            new_G.append(specialization)
+                    elif g[i] != instance[i]:
+                        # Keep as is
+                        if g not in new_G:
+                            new_G.append(g)
+        
+        # Remove hypotheses that are more general than others
+        self.G = []
+        for i in range(len(new_G)):
+            is_general = False
+            for j in range(len(new_G)):
+                if i != j and self.is_more_general(new_G[i], new_G[j]):
+                    is_general = True
+                    break
+            if not is_general and new_G[i] not in self.G:
+                self.G.append(new_G[i])
+    
+    def fit(self, X, y):
+        """
+        Train the algorithm on data
+        
+        Args:
+            X: Training instances (2D array-like)
+            y: Training labels (0 or 1)
+        """
+        for idx, (instance, label) in enumerate(zip(X, y)):
+            print(f"\n{'='*50}")
+            print(f"Processing example {idx + 1}:")
+            print(f"Instance: {instance}, Label: {'Positive' if label == 1 else 'Negative'}")
+            print(f"S before: {self.S}")
+            print(f"G before: {self.G}")
+            
+            if label == 1:  # Positive example
+                # Remove inconsistent hypotheses from G
+                self.G = self.remove_inconsistent_hypotheses(self.G, instance, label)
+                
+                # Generalize S
+                self.generalize_S(instance)
+                
+            else:  # Negative example
+                # Remove inconsistent hypotheses from S
+                self.S = self.remove_inconsistent_hypotheses(self.S, instance, label)
+                
+                # Specialize G
+                self.specialize_G(instance)
+            
+            # Remove any hypothesis in S that is more general than another in S
+            self.S = [s for s in self.S if not any(
+                i != j and self.is_more_general(self.S[i], self.S[j]) 
+                for i in range(len(self.S)) for j in range(len(self.S))
+            )]
+            
+            # Remove any hypothesis in G that is more specific than another in G
+            self.G = [g for g in self.G if not any(
+                i != j and self.is_more_general(self.G[j], self.G[i]) 
+                for i in range(len(self.G)) for j in range(len(self.G))
+            )]
+            
+            print(f"S after: {self.S}")
+            print(f"G after: {self.G}")
+            
+            # Save history
+            self.S_history.append(self.S.copy())
+            self.G_history.append(self.G.copy())
+    
+    def predict(self, X):
+        """
+        Predict labels for instances
+        
+        Args:
+            X: Instances to predict
+        
+        Returns:
+            List of predictions (0 or 1)
+        """
+        predictions = []
+        
+        for instance in X:
+            # If all hypotheses in S agree on positive classification
+            s_positive = all(
+                self.is_consistent(s, instance, 1) for s in self.S if s != ['∅'] * self.num_attributes
+            )
+            
+            # If all hypotheses in G agree on positive classification
+            g_positive = all(
+                self.is_consistent(g, instance, 1) for g in self.G
+            )
+            
+            if s_positive and g_positive:
+                predictions.append(1)
+            elif not s_positive and not g_positive:
+                predictions.append(0)
+            else:
+                predictions.append(-1)  # Ambiguous classification
+        
+        return predictions
+    
+    def print_version_space(self):
+        """Print the current version space"""
+        print("\n" + "="*50)
+        print("CURRENT VERSION SPACE")
+        print("="*50)
+        
+        print("\nS (Most Specific Hypotheses):")
+        if not self.S or self.S == [['∅'] * self.num_attributes]:
+            print("  None")
+        else:
+            for i, s in enumerate(self.S):
+                print(f"  S{i+1}: {s}")
+        
+        print("\nG (Most General Hypotheses):")
+        if not self.G or self.G == [['?'] * self.num_attributes]:
+            print("  None")
+        else:
+            for i, g in enumerate(self.G):
+                print(f"  G{i+1}: {g}")
+        
+        print("\nVersion Space (All consistent hypotheses):")
+        print("  Between S and G boundaries")
+
+
+def example_usage():
+    """Example usage of the Candidate Elimination Algorithm"""
+    
+    # Example: Learning the concept of "EnjoySport"
+    # Attributes: Sky, AirTemp, Humidity, Wind, Water, Forecast
+    # Binary classification: Enjoy Sport? (Yes/No)
+    
+    # Training data
+    X_train = [
+        ['Sunny', 'Warm', 'Normal', 'Strong', 'Warm', 'Same'],
+        ['Sunny', 'Warm', 'High', 'Strong', 'Warm', 'Same'],
+        ['Rainy', 'Cold', 'High', 'Strong', 'Warm', 'Change'],
+        ['Sunny', 'Warm', 'High', 'Strong', 'Cool', 'Change']
+    ]
+    
+    y_train = [1, 1, 0, 1]  # 1 = Enjoy Sport, 0 = Not Enjoy Sport
+    
+    # Initialize algorithm
+    num_attributes = len(X_train[0])
+    ce = CandidateElimination(num_attributes)
+    
+    # Train the model
+    print("TRAINING CANDIDATE ELIMINATION ALGORITHM")
+    print("="*50)
+    ce.fit(X_train, y_train)
+    
+    # Print final version space
+    ce.print_version_space()
+    
+    # Make predictions
+    print("\n" + "="*50)
+    print("PREDICTIONS")
+    print("="*50)
+    
+    test_instances = [
+        ['Sunny', 'Warm', 'Normal', 'Strong', 'Cool', 'Change'],
+        ['Rainy', 'Cold', 'High', 'Strong', 'Warm', 'Same'],
+        ['Sunny', 'Warm', 'High', 'Strong', 'Warm', 'Same']
+    ]
+    
+    predictions = ce.predict(test_instances)
+    
+    for i, (instance, pred) in enumerate(zip(test_instances, predictions)):
+        label = "Enjoy Sport" if pred == 1 else "Not Enjoy Sport" if pred == 0 else "Ambiguous"
+        print(f"Instance {i+1}: {instance} → {label}")
+
+
+def simplified_example():
+    """A simpler example for demonstration"""
+    
+    print("SIMPLIFIED EXAMPLE")
+    print("="*50)
+    
+    # Simple binary features
+    X_train = [
+        ['A', 'X'],
+        ['B', 'X'],
+        ['A', 'Y']
+    ]
+    
+    y_train = [1, 0, 1]  # Positive, Negative, Positive
+    
+    ce = CandidateElimination(2)
+    ce.fit(X_train, y_train)
+    
+    ce.print_version_space()
+
+
+if __name__ == "__main__":
+    print("CANDIDATE ELIMINATION ALGORITHM IMPLEMENTATION")
+    print("="*50)
+    
+    # Run the examples
+    example_usage()
+    
+    print("\n\n")
+    simplified_example()
